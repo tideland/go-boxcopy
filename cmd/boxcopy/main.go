@@ -227,13 +227,13 @@ max_connections = 5       # Max concurrent IMAP connections (one per mailbox)
 
 # Source IMAP server (copy FROM)
 [source]
-host = "imap.source-server.com"
+host = "imap.source.example.com"
 port = 993
 tls = true
 
 # Target IMAP server (copy TO)
 [target]
-host = "imap.target-server.com"
+host = "imap.target.example.com"
 port = 993
 tls = true
 
@@ -242,17 +242,17 @@ tls = true
 # Passwords MUST be encrypted: boxcopy encrypt-password -k <key>
 
 [[mailbox]]
-name = "user1"
-source_user = "user1@source-server.com"
+name = "john.doe"
+source_user = "john.doe@source.example.com"
 source_password = "PASTE_ENCRYPTED_PASSWORD_HERE"
-target_user = "user1@target-server.com"
+target_user = "john.doe@target.example.com"
 target_password = "PASTE_ENCRYPTED_PASSWORD_HERE"
 
 # [[mailbox]]
-# name = "user2"
-# source_user = "user2@source-server.com"
+# name = "jane.doe"
+# source_user = "jane.doe@source.example.com"
 # source_password = "PASTE_ENCRYPTED_PASSWORD_HERE"
-# target_user = "user2@target-server.com"
+# target_user = "jane.doe@target.example.com"
 # target_password = "PASTE_ENCRYPTED_PASSWORD_HERE"
 `
 
