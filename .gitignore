@@ -1,0 +1,26 @@
+# Binaries
+boxsync
+*.exe
+
+# Build output
+dist/
+
+# Test directory (contains secrets)
+.test/
+
+# Config with secrets (use boxsync.toml.example as template)
+*.toml
+!boxsync.toml.example
+
+# State and runtime files
+*.pid
+state.json
+
+# Test output
+*.test
+*.out
+coverage.html
+coverage.txt
+
+# macOS
+.DS_Store

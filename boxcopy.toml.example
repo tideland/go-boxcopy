@@ -1,0 +1,55 @@
+# BoxCopy Configuration Example
+#
+# SECURITY REQUIREMENTS:
+# - This file MUST have mode 0600 (chmod 600 config.toml)
+# - All passwords MUST be encrypted
+#
+# Setup:
+#   1. Copy: cp boxcopy.toml.example ~/.boxcopy/config.toml
+#   2. Set permissions: chmod 600 ~/.boxcopy/config.toml
+#   3. Edit with your server details
+#   4. Encrypt passwords: boxcopy encrypt-password -k <your-key>
+#   5. Dry-run: boxcopy copy -k <your-key>
+#   6. Copy: boxcopy copy -k <your-key> --perform
+
+# General settings
+[general]
+state_file = "~/.boxcopy/state.dat"
+log_level = "info"   # debug, info, warn, error
+progress = 10        # Log progress every N% (0 = disable, 10 = every 10%, 25 = every 25%)
+
+# Copy parameters
+[copy_parameters]
+messages_per_second = 10  # Rate limit for message copy
+max_connections = 5       # Max concurrent IMAP connections (one per mailbox)
+
+# Source IMAP server (copy FROM)
+[source]
+host = "imap.source-server.com"
+port = 993
+tls = true
+
+# Target IMAP server (copy TO)
+[target]
+host = "imap.target-server.com"
+port = 993
+tls = true
+
+# Mailbox configurations
+# Add one [[mailbox]] section per user to copy
+
+[[mailbox]]
+name = "user1"
+source_user = "user1@source-server.com"
+source_password = "BASE64_ENCRYPTED_PASSWORD"
+target_user = "user1@target-server.com"
+target_password = "BASE64_ENCRYPTED_PASSWORD"
+
+[[mailbox]]
+name = "user2"
+source_user = "user2@source-server.com"
+source_password = "BASE64_ENCRYPTED_PASSWORD"
+target_user = "user2@target-server.com"
+target_password = "BASE64_ENCRYPTED_PASSWORD"
+
+# Add more [[mailbox]] entries as needed...
