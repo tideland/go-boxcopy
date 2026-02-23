@@ -328,6 +328,13 @@ func cleanTargetMailbox(mbConfig config.MailboxConfig, targetServer config.Serve
 			slog.Int("messages", len(uids)))
 	}
 
+	// Deselect any currently selected mailbox before deleting folders.
+	// Some servers drop the connection if DELETE is issued while a
+	// mailbox is still selected.
+	if err := client.Unselect(); err != nil {
+		return fmt.Errorf("failed to unselect mailbox before folder deletion: %w", err)
+	}
+
 	// Delete all folders except INBOX.
 	// Sort descending by name so children always come before their parents
 	// (e.g. "INBOX.Sent.Sub" before "INBOX.Sent" before "INBOX").

@@ -158,6 +158,25 @@ func (c *Client) Select(mailbox string) (*MailboxInfo, error) {
 	}, nil
 }
 
+// Unselect deselects the currently selected mailbox, returning to the
+// authenticated state. This must be called before deleting folders on
+// servers that reject DELETE while a mailbox is selected.
+func (c *Client) Unselect() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.selected == "" {
+		return nil
+	}
+
+	if err := c.client.Unselect().Wait(); err != nil {
+		return fmt.Errorf("failed to unselect mailbox: %w", err)
+	}
+
+	c.selected = ""
+	return nil
+}
+
 // Noop sends a NOOP command to keep the connection alive.
 func (c *Client) Noop() error {
 	c.mu.Lock()
