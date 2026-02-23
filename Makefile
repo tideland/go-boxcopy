@@ -19,8 +19,8 @@ help:
 	@echo "  install-tools - Install development tools"
 	@echo "  check-tools   - Check tool versions"
 	@echo "  ci            - Run CI pipeline (tidy, lint, build, test)"
-	@echo "  cross         - Cross-compile boxcopy for Linux, macOS, and Windows (amd64/arm64)
-  install       - Install boxcopy binary"
+	@echo "  cross         - Cross-compile boxcopy for Linux, macOS, and Windows (amd64/arm64)"
+	@echo "  install       - Install boxcopy binary"
 
 # Tidy go.mod and go.sum
 tidy:
