@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"tideland.dev/go/boxcopy/internal/config"
@@ -183,8 +184,8 @@ func cmdInit(args []string) error {
 	}
 
 	// Ensure directory exists.
-	dir := outPath[:strings.LastIndex(outPath, "/")]
-	if dir != "" {
+	dir := filepath.Dir(outPath)
+	if dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory: %w", err)
 		}

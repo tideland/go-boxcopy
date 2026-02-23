@@ -1,4 +1,4 @@
-.PHONY: all help tidy lint build binary test bench coverage clean install-tools check-tools ci install
+.PHONY: all help tidy lint build binary cross test bench coverage clean install-tools check-tools ci install
 
 # Default target
 all: tidy lint binary test
@@ -19,7 +19,8 @@ help:
 	@echo "  install-tools - Install development tools"
 	@echo "  check-tools   - Check tool versions"
 	@echo "  ci            - Run CI pipeline (tidy, lint, build, test)"
-	@echo "  install       - Install boxcopy binary"
+	@echo "  cross         - Cross-compile boxcopy for Linux, macOS, and Windows (amd64/arm64)
+  install       - Install boxcopy binary"
 
 # Tidy go.mod and go.sum
 tidy:
@@ -40,6 +41,28 @@ build:
 binary:
 	@echo "==> Building boxcopy binary..."
 	go build -v -o boxcopy ./cmd/boxcopy
+
+# Cross-compile for Linux, macOS, and Windows (amd64 and arm64)
+CROSS_TARGETS = \
+	linux/amd64 \
+	linux/arm64 \
+	darwin/amd64 \
+	darwin/arm64 \
+	windows/amd64 \
+	windows/arm64
+
+cross:
+	@echo "==> Cross-compiling boxcopy..."
+	@mkdir -p dist
+	@for target in $(CROSS_TARGETS); do \
+		os=$$(echo $$target | cut -d/ -f1); \
+		arch=$$(echo $$target | cut -d/ -f2); \
+		out="dist/boxcopy-$$os-$$arch"; \
+		[ "$$os" = "windows" ] && out="$$out.exe"; \
+		echo "  Building $$os/$$arch -> $$out"; \
+		GOOS=$$os GOARCH=$$arch go build -o "$$out" ./cmd/boxcopy || exit 1; \
+	done
+	@echo "==> Binaries written to dist/"
 
 # Run tests with race detector
 test:
@@ -62,6 +85,7 @@ coverage:
 clean:
 	@echo "==> Cleaning..."
 	rm -f boxcopy coverage.out coverage.html
+	rm -rf dist/
 	go clean -cache -testcache
 
 # Install development tools
