@@ -353,7 +353,10 @@ func (m *Mailbox) copy() error {
 				slog.Any("error", err))
 			// The target connection may be broken; reconnect before next folder.
 			// We need to disconnect and reconnect safely.
-			m.disconnect() // uses internal locking
+			if disconnErr := m.disconnect(); disconnErr != nil {
+				m.logger.Warn("error while disconnecting before reconnect",
+					slog.Any("error", disconnErr))
+			}
 			if reconnErr := m.connect(); reconnErr != nil {
 				m.logger.Error("failed to reconnect to target server, aborting folder copy",
 					slog.Any("error", reconnErr))
