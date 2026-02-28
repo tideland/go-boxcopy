@@ -12,6 +12,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out local dependencies
+        run: |
+          git clone --depth=1 https://github.com/tideland/go-asserts.git ../asserts
+          git clone --depth=1 https://github.com/tideland/go-toml.git   ../toml
+          git clone --depth=1 https://github.com/tideland/go-wait.git   ../wait
+          git clone --depth=1 https://github.com/tideland/go-worker.git ../worker
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -29,4 +36,4 @@ jobs:
         run: go build -v ./...
 
       - name: Test
-        run: go test -v ./...
+        run: go test -v -race ./...
