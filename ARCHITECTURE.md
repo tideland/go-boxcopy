@@ -37,6 +37,7 @@ boxcopy/
 │   ├── runner/        # Copy orchestration: confirmation, cleanup, copy
 │   ├── mailbox/       # Mailbox copy implementation
 │   ├── imap/          # IMAP client wrapper
+│   ├── verifier/      # Post-copy verification: folder structure and sizes
 │   └── state/         # Persistence, copy state
 ```
 
@@ -48,6 +49,7 @@ boxcopy/
 | `runner` | Safety confirmation, target cleanup, parallel copy orchestration |
 | `mailbox` | Per-mailbox copy logic: folders, messages, flags, progress |
 | `imap` | IMAP client wrapper, folder/message operations, expunge |
+| `verifier` | Post-copy verification: folder structure, message counts, total sizes |
 | `state` | Persist copy state, UID mappings, restart recovery |
 
 ## Dependencies
@@ -208,6 +210,22 @@ mailboxes, _ := doc.TableArray("mailbox")
 
 - TLS enabled by default (port 993)
 - Non-TLS connections require explicit configuration
+
+## Verification (`boxcopy verify`)
+
+`boxcopy verify` connects to both source and target read-only and checks, for each configured mailbox:
+
+1. **Folder structure** — folder names present on source must all be present on target.
+2. **Message counts** — per-folder `NumMessages` from IMAP `STATUS` must match.
+3. **Total sizes** — per-folder sum of `RFC822.SIZE` from `FETCH 1:* (RFC822.SIZE)` must match.
+
+No message bodies or headers are downloaded. If a message was dropped or truncated during copy, either the count or the size total will diverge, surfacing the discrepancy.
+
+The check is intentionally limited to structure and sizes rather than content comparison (e.g. Message-ID matching). Summing RFC822 sizes is lightweight, works without selecting each message individually, and is a reliable signal: any missing or corrupted message changes the total.
+
+### Live-server caveat
+
+Both servers remain live during verification. Any mail event that occurs between the end of the copy and the verify run — a new message arriving, a spam filter moving a message to Trash, an auto-expunge — will show up as a discrepancy even though the copy itself was correct. To minimise false positives, run `verify` as soon as possible after `copy --perform`, before mail clients reconnect or server-side filters trigger.
 
 ## Testing
 

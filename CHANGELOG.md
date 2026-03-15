@@ -23,3 +23,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Throttle for per-message rate limiting
 - Progress logging at configurable percentage milestones
 - BSD-3-Clause license
+- `boxcopy verify` command for post-copy validation: compares folder structure, per-folder message counts, and total RFC822 sizes between source and target (read-only, no bodies downloaded)

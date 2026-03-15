@@ -47,6 +47,7 @@ make install
 3. boxcopy encrypt-password -k <key>  # Encrypt each mailbox password
 4. boxcopy copy -k <key>              # Dry-run: review what would be copied
 5. boxcopy copy -k <key> --perform    # Actual copy (asks for confirmation)
+6. boxcopy verify -k <key>            # Verify: compare folder structure and sizes
 ```
 
 ## Usage
@@ -156,6 +157,20 @@ SGVsbG8gV29ybGQ...
 Add this to your config file as source_password or target_password.
 ```
 
+## Verification
+
+After copying, run the built-in `verify` command to confirm the migration completed correctly. Both connections are strictly read-only — no data is modified on either server.
+
+```bash
+boxcopy verify -c ~/.boxcopy/config.toml -k <key>
+```
+
+The command compares, for each mailbox, the folder structure (names), per-folder message counts, and total per-folder RFC822 sizes between source and target, then prints a per-folder PASS/FAIL table with an overall result. No message bodies or headers are downloaded.
+
+Counting messages and summing their sizes is sufficient to detect missing or truncated messages without fetching any content. If a message is absent or was corrupted in transit, the totals will diverge.
+
+**Note:** both servers remain live during verification. Any mail event between the end of the copy and the verify run — a new arrival, a spam filter moving a message to Trash, an auto-expunge — will appear as a discrepancy even if the copy itself was correct. Run `verify` immediately after `copy --perform`, before mail clients reconnect or server-side filters trigger.
+
 ## Documentation
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Technical architecture and design
@@ -167,4 +182,4 @@ BSD-3-Clause - see [LICENSE](LICENSE)
 
 ## Author
 
-Tideland - https://tideland.dev
+Frank Mueller - Germany - https://themue.dev

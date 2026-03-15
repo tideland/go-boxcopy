@@ -44,6 +44,8 @@ func main() {
 		switch cmd {
 		case "copy":
 			err = cmdCopy(cmdArgs)
+		case "verify":
+			err = cmdVerify(cmdArgs)
 		case "encrypt-password":
 			err = cmdEncryptPassword(cmdArgs)
 		case "init":
@@ -68,6 +70,7 @@ Usage: boxcopy <command> [options]
 Commands:
   init              Generate initial configuration file
   copy              Copy mailboxes (requires -k)
+  verify            Verify copy result: compare folder structure and sizes (requires -k)
   encrypt-password  Encrypt a password for config (requires -k)
   help              Show this help message
 
@@ -75,6 +78,11 @@ Copy Options:
   -c, --config <path>     Path to configuration file (default: %s)
   -k, --key <key>         Encryption key (required)
   --perform               Perform the actual copy (default is dry-run)
+  --log-level <level>     Log level: debug, info, warn, error
+
+Verify Options:
+  -c, --config <path>     Path to configuration file (default: %s)
+  -k, --key <key>         Encryption key (required)
   --log-level <level>     Log level: debug, info, warn, error
 
 Init Options:
@@ -95,6 +103,7 @@ Workflow:
   3. boxcopy encrypt-password -k <key>  Encrypt each password, add to config
   4. boxcopy copy -k <key>              Dry-run: review what would be copied
   5. boxcopy copy -k <key> --perform    Actual copy (asks for confirmation)
+  6. boxcopy verify -k <key>            Verify: compare folder structure and sizes
 
 Examples:
   boxcopy init
@@ -102,8 +111,9 @@ Examples:
   boxcopy encrypt-password -k mykey
   boxcopy copy -c myconfig.toml -k mykey
   boxcopy copy -c myconfig.toml -k mykey --perform
+  boxcopy verify -c myconfig.toml -k mykey
 
-`, defaultConfigPath, defaultConfigPath)
+`, defaultConfigPath, defaultConfigPath, defaultConfigPath)
 }
 
 // cmdCopy runs a copy cycle.

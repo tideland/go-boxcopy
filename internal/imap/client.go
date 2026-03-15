@@ -158,6 +158,30 @@ func (c *Client) Select(mailbox string) (*MailboxInfo, error) {
 	}, nil
 }
 
+// SelectReadOnly selects a mailbox in read-only mode (IMAP EXAMINE command),
+// preventing the server from changing \Recent flags on the source.
+func (c *Client) SelectReadOnly(mailbox string) (*MailboxInfo, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.logger.Debug("examining mailbox read-only", slog.String("mailbox", mailbox))
+
+	data, err := c.client.Select(mailbox, &imap.SelectOptions{ReadOnly: true}).Wait()
+	if err != nil {
+		return nil, fmt.Errorf("failed to examine mailbox %s: %w", mailbox, err)
+	}
+
+	c.selected = mailbox
+
+	return &MailboxInfo{
+		Name:        mailbox,
+		NumMessages: data.NumMessages,
+		UIDValidity: data.UIDValidity,
+		UIDNext:     uint32(data.UIDNext),
+		Flags:       convertFlags(data.Flags),
+	}, nil
+}
+
 // Unselect deselects the currently selected mailbox, returning to the
 // authenticated state. This must be called before deleting folders on
 // servers that reject DELETE while a mailbox is selected.

@@ -291,6 +291,45 @@ func (c *Client) FetchAll(opts *FetchOptions) ([]Message, error) {
 	return messages, nil
 }
 
+// FetchAllSizes fetches RFC822.SIZE for every message in the currently
+// selected mailbox and returns the total in bytes. The mailbox must be
+// selected before calling this method. No message bodies are downloaded.
+func (c *Client) FetchAllSizes() (uint64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.logger.Debug("fetching all message sizes")
+
+	seqSet := imap.SeqSet{}
+	seqSet.AddRange(1, 0) // 1:* — all messages
+
+	fetchCmd := c.client.Fetch(seqSet, &imap.FetchOptions{RFC822Size: true})
+
+	var total uint64
+	for {
+		msg := fetchCmd.Next()
+		if msg == nil {
+			break
+		}
+		for {
+			item := msg.Next()
+			if item == nil {
+				break
+			}
+			if data, ok := item.(imapclient.FetchItemDataRFC822Size); ok {
+				total += uint64(data.Size)
+			}
+		}
+	}
+
+	if err := fetchCmd.Close(); err != nil {
+		return 0, fmt.Errorf("fetch sizes failed: %w", err)
+	}
+
+	c.logger.Debug("message sizes fetched", slog.Uint64("total_bytes", total))
+	return total, nil
+}
+
 // serverSetFlags are flags that only the server may set; clients must not
 // include them in APPEND commands or the server will reject the request.
 var serverSetFlags = map[string]bool{
