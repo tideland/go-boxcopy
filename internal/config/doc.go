@@ -12,4 +12,4 @@ package config
 //   - Source and target IMAP server settings
 //   - User/mailbox definitions with encrypted credentials
 //   - Throttling settings (messages/time, connections)
-//   - Daemon settings (PID file, logging)
+//   - General settings (log level, progress reporting)

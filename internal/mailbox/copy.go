@@ -15,7 +15,10 @@ import (
 
 // copyFolders copies folder structure from source to target.
 func (m *Mailbox) copyFolders() error {
-	if m.sourceClient == nil || m.targetClient == nil {
+	m.mu.RLock()
+	connected := m.sourceClient != nil && m.targetClient != nil
+	m.mu.RUnlock()
+	if !connected {
 		return fmt.Errorf("not connected")
 	}
 
@@ -75,7 +78,10 @@ func (m *Mailbox) copyFolders() error {
 
 // copyFolder copies a single folder's messages from source to target.
 func (m *Mailbox) copyFolder(folderName string) error {
-	if m.sourceClient == nil || m.targetClient == nil {
+	m.mu.RLock()
+	connected := m.sourceClient != nil && m.targetClient != nil
+	m.mu.RUnlock()
+	if !connected {
 		return fmt.Errorf("not connected")
 	}
 

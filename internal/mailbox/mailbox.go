@@ -332,9 +332,7 @@ func (m *Mailbox) copy() error {
 		return err
 	}
 
-	// Get list of folders to copy.
-	// sourceClient is thread-safe, but let's be careful not to access m.sourceClient if it's nil
-	// connect() ensures it's set.
+	// Get list of folders to copy. connect() above ensures sourceClient is non-nil.
 	folders, err := m.sourceClient.ListFolders()
 	if err != nil {
 		m.setError(fmt.Errorf("failed to list folders: %w", err))
