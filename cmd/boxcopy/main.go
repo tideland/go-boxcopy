@@ -16,6 +16,7 @@ import (
 
 	"tideland.dev/go/boxcopy/internal/config"
 	"tideland.dev/go/boxcopy/internal/runner"
+	"tideland.dev/go/boxcopy/internal/verifier"
 )
 
 const (
@@ -265,6 +266,118 @@ target_password = "PASTE_ENCRYPTED_PASSWORD_HERE"
 # target_user = "jane.doe@target.example.com"
 # target_password = "PASTE_ENCRYPTED_PASSWORD_HERE"
 `
+
+// cmdVerify runs the verify command: compares source and target mail trees
+// folder by folder, checking message counts and total RFC822 sizes.
+func cmdVerify(args []string) error {
+	fs := flag.NewFlagSet("verify", flag.ExitOnError)
+	cfgPath := fs.String("c", defaultConfigPath, "Path to configuration file")
+	fs.StringVar(cfgPath, "config", defaultConfigPath, "Path to configuration file")
+	key := fs.String("k", "", "Encryption key for passwords (required)")
+	fs.StringVar(key, "key", "", "Encryption key for passwords (required)")
+	logLvl := fs.String("log-level", "", "Log level (debug, info, warn, error)")
+	fs.Parse(args) //nolint:errcheck
+
+	if *key == "" {
+		return fmt.Errorf("encryption key is required: use -k <key>")
+	}
+
+	logger := setupLogger(*logLvl)
+
+	results, err := verifier.Verify(&verifier.Options{
+		ConfigPath:    expandPath(*cfgPath),
+		EncryptionKey: *key,
+		Logger:        logger,
+	})
+	if err != nil {
+		return err
+	}
+
+	if !printVerifyReport(results) {
+		os.Exit(1)
+	}
+	return nil
+}
+
+// printVerifyReport prints a per-mailbox, per-folder report and returns true
+// if every mailbox passed verification.
+func printVerifyReport(results []verifier.MailboxResult) bool {
+	allOK := true
+
+	for _, r := range results {
+		fmt.Printf("\n%s\n", strings.Repeat("=", 70))
+		fmt.Printf("Mailbox : %s  (%s → %s)\n", r.Name, r.SrcUser, r.TgtUser)
+
+		if r.Err != nil {
+			fmt.Printf("Status  : \033[31mFAIL\033[0m\n")
+			fmt.Printf("  ERROR : %v\n", r.Err)
+			allOK = false
+			continue
+		}
+
+		mbOK := r.OK()
+		fmt.Printf("Status  : %s\n", verifyStatus(mbOK))
+		if !mbOK {
+			allOK = false
+		}
+
+		if len(r.MissingFolders) > 0 {
+			fmt.Printf("  Folders missing on target (%d):\n", len(r.MissingFolders))
+			for _, f := range r.MissingFolders {
+				fmt.Printf("    - %s\n", f)
+			}
+		}
+		if len(r.ExtraFolders) > 0 {
+			fmt.Printf("  Folders extra on target (%d, informational):\n", len(r.ExtraFolders))
+			for _, f := range r.ExtraFolders {
+				fmt.Printf("    + %s\n", f)
+			}
+		}
+
+		if len(r.Folders) > 0 {
+			fmt.Printf("\n  %-40s %8s %8s %12s %12s  Result\n",
+				"Folder", "SrcMsgs", "TgtMsgs", "SrcSize", "TgtSize")
+			fmt.Printf("  %-40s %8s %8s %12s %12s  ------\n",
+				strings.Repeat("-", 40), "-------", "-------", "-----------", "-----------")
+			for _, fr := range r.Folders {
+				fmt.Printf("  %-40s %8d %8d %12s %12s  %s\n",
+					fr.Name,
+					fr.SrcCount, fr.TgtCount,
+					formatBytes(fr.SrcSize), formatBytes(fr.TgtSize),
+					verifyStatus(fr.OK()))
+			}
+		}
+	}
+
+	fmt.Printf("\n%s\n", strings.Repeat("=", 70))
+	fmt.Printf("Overall : %s\n", verifyStatus(allOK))
+	return allOK
+}
+
+func verifyStatus(ok bool) string {
+	if ok {
+		return "\033[32mPASS\033[0m"
+	}
+	return "\033[31mFAIL\033[0m"
+}
+
+func formatBytes(b uint64) string {
+	const (
+		KB = 1024
+		MB = 1024 * KB
+		GB = 1024 * MB
+	)
+	switch {
+	case b >= GB:
+		return fmt.Sprintf("%.1f GB", float64(b)/GB)
+	case b >= MB:
+		return fmt.Sprintf("%.1f MB", float64(b)/MB)
+	case b >= KB:
+		return fmt.Sprintf("%.1f KB", float64(b)/KB)
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
+}
 
 // setupLogger creates a logger based on log level string.
 func setupLogger(logLvl string) *slog.Logger {
