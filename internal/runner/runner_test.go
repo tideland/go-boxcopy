@@ -93,10 +93,16 @@ target_password = %q
 
 	f, err := os.CreateTemp("", "boxcopy*.toml")
 	verify.NoError(t, err)
-	defer os.Remove(f.Name())
+	t.Cleanup(func() {
+		if err := os.Remove(f.Name()); err != nil {
+			t.Errorf("failed to remove temp file: %v", err)
+		}
+	})
 	_, err = f.WriteString(toml)
 	verify.NoError(t, err)
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("failed to close temp file: %v", err)
+	}
 
 	err = Run(&Options{
 		ConfigPath:    f.Name(),
@@ -132,10 +138,16 @@ target_password = %q
 
 	f, err := os.CreateTemp("", "boxcopy*.toml")
 	verify.NoError(t, err)
-	defer os.Remove(f.Name())
+	t.Cleanup(func() {
+		if err := os.Remove(f.Name()); err != nil {
+			t.Errorf("failed to remove temp file: %v", err)
+		}
+	})
 	_, err = f.WriteString(toml)
 	verify.NoError(t, err)
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("failed to close temp file: %v", err)
+	}
 
 	err = Run(&Options{
 		ConfigPath:    f.Name(),

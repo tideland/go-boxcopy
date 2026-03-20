@@ -91,8 +91,8 @@ func Verify(opts *Options) ([]MailboxResult, error) {
 	return results, nil
 }
 
-func verifyMailbox(mb config.MailboxConfig, cfg *config.Config, logger *slog.Logger) MailboxResult {
-	result := MailboxResult{
+func verifyMailbox(mb config.MailboxConfig, cfg *config.Config, logger *slog.Logger) (result MailboxResult) {
+	result = MailboxResult{
 		Name:    mb.Name,
 		SrcUser: mb.SourceUser,
 		TgtUser: mb.TargetUser,
@@ -105,14 +105,22 @@ func verifyMailbox(mb config.MailboxConfig, cfg *config.Config, logger *slog.Log
 		result.Err = fmt.Errorf("source connect failed: %w", err)
 		return result
 	}
-	defer src.Close() //nolint:errcheck
+	defer func() {
+		if err := src.Close(); err != nil && result.Err == nil {
+			result.Err = fmt.Errorf("failed to close source connection: %w", err)
+		}
+	}()
 
 	tgt, err := imap.Dial(cfg.Target, mb.TargetUser, mb.TargetPassword, imapOpts)
 	if err != nil {
 		result.Err = fmt.Errorf("target connect failed: %w", err)
 		return result
 	}
-	defer tgt.Close() //nolint:errcheck
+	defer func() {
+		if err := tgt.Close(); err != nil && result.Err == nil {
+			result.Err = fmt.Errorf("failed to close target connection: %w", err)
+		}
+	}()
 
 	srcFolders, err := src.ListFolders()
 	if err != nil {

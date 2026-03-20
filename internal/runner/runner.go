@@ -266,7 +266,7 @@ func cleanTargets(cfg *config.Config, logger *slog.Logger) error {
 
 // cleanTargetMailbox connects to a single target mailbox and expunges all
 // messages from all selectable folders.
-func cleanTargetMailbox(mbConfig config.MailboxConfig, targetServer config.ServerConfig, logger *slog.Logger) error {
+func cleanTargetMailbox(mbConfig config.MailboxConfig, targetServer config.ServerConfig, logger *slog.Logger) (retErr error) {
 	client, err := imap.Dial(
 		targetServer,
 		mbConfig.TargetUser,
@@ -276,7 +276,11 @@ func cleanTargetMailbox(mbConfig config.MailboxConfig, targetServer config.Serve
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
-	defer client.Close() //nolint:errcheck
+	defer func() {
+		if err := client.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("failed to close client: %w", err)
+		}
+	}()
 
 	folders, err := client.ListFolders()
 	if err != nil {
