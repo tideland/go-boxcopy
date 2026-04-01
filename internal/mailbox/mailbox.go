@@ -143,8 +143,8 @@ func (m *Mailbox) Connect() error {
 }
 
 // Disconnect closes connections to both IMAP servers.
-func (m *Mailbox) Disconnect() {
-	m.disconnect() //nolint:errcheck
+func (m *Mailbox) Disconnect() error {
+	return m.disconnect()
 }
 
 // Copy performs a full copy (folders and messages) from source to target.
@@ -260,7 +260,9 @@ func (m *Mailbox) connect() error {
 		&imap.Options{Logger: m.logger.With(slog.String("server", "target"))},
 	)
 	if err != nil {
-		m.sourceClient.Close() //nolint:errcheck
+		if closeErr := m.sourceClient.Close(); closeErr != nil {
+			m.logger.Warn("failed to close source connection during cleanup", slog.Any("error", closeErr))
+		}
 		m.mu.Lock()
 		m.sourceClient = nil
 		m.mu.Unlock()
@@ -313,12 +315,16 @@ func (m *Mailbox) disconnect() error {
 	return nil
 }
 
-func (m *Mailbox) copy() error {
+func (m *Mailbox) copy() (retErr error) {
 	// Ensure connected.
 	if err := m.connect(); err != nil {
 		return err
 	}
-	defer m.disconnect() //nolint:errcheck
+	defer func() {
+		if err := m.disconnect(); err != nil && retErr == nil {
+			retErr = err
+		}
+	}()
 
 	m.setStatus(StatusCopying)
 	m.logger.Info("starting full copy")

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 )
 
@@ -132,6 +133,7 @@ func (s *State) SaveIfDirty() error {
 // MarshalJSON implements json.Marshaler for UIDSet.
 func (u UIDSet) MarshalJSON() ([]byte, error) {
 	uids := u.ToSlice()
+	slices.Sort(uids)
 	return json.Marshal(uids)
 }
 

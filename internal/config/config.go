@@ -335,6 +335,23 @@ func (c *Config) Validate() error {
 	if !isValidLogLevel(c.General.LogLevel) {
 		return fmt.Errorf("invalid log_level: %s (must be debug, info, warn, or error)", c.General.LogLevel)
 	}
+	for i, mb := range c.Mailboxes {
+		if mb.Name == "" {
+			return fmt.Errorf("mailbox[%d]: name is required", i)
+		}
+		if mb.SourceUser == "" {
+			return fmt.Errorf("mailbox[%d] %q: source_user is required", i, mb.Name)
+		}
+		if mb.SourcePassword == "" {
+			return fmt.Errorf("mailbox[%d] %q: source_password is required", i, mb.Name)
+		}
+		if mb.TargetUser == "" {
+			return fmt.Errorf("mailbox[%d] %q: target_user is required", i, mb.Name)
+		}
+		if mb.TargetPassword == "" {
+			return fmt.Errorf("mailbox[%d] %q: target_password is required", i, mb.Name)
+		}
+	}
 	return nil
 }
 

@@ -86,7 +86,9 @@ func Dial(server config.ServerConfig, user, password string, opts *Options) (*Cl
 	logger.Debug("logging in")
 
 	if err := client.Login(user, password).Wait(); err != nil {
-		client.Close() //nolint:errcheck
+		if closeErr := client.Close(); closeErr != nil {
+			logger.Warn("failed to close connection after login failure", slog.Any("error", closeErr))
+		}
 		return nil, fmt.Errorf("failed to login as %s: %w", user, err)
 	}
 

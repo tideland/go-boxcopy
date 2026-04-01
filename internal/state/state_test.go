@@ -6,6 +6,7 @@ package state
 // by the new BSD license.
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -228,6 +229,19 @@ func TestClearMailbox(t *testing.T) {
 	s.ClearMailbox("user1")
 
 	verify.Length(t, s.Folders("user1"), 0)
+}
+
+// TestUIDSetMarshalJSONSorted tests that UIDSet serialises in ascending order
+// so the state file is deterministic across saves (fix 3.4).
+func TestUIDSetMarshalJSONSorted(t *testing.T) {
+	u := make(UIDSet)
+	u.Add(300)
+	u.Add(100)
+	u.Add(200)
+
+	data, err := json.Marshal(u)
+	verify.NoError(t, err)
+	verify.Equal(t, string(data), "[100,200,300]")
 }
 
 // TestUIDSet tests UIDSet methods.
