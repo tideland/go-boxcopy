@@ -341,7 +341,7 @@ func (c *Config) Validate() error {
 // isValidLogLevel checks if the log level is valid.
 func isValidLogLevel(level string) bool {
 	switch strings.ToLower(level) {
-	case "debug", "info", "warn", "error":
+	case "debug", "info", "warn", "warning", "error":
 		return true
 	default:
 		return false

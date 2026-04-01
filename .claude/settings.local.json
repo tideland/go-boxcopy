@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(wc -l cmd/boxcopy/main.go internal/*/*.go)"
+    ]
+  }
+}

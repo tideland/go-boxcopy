@@ -118,9 +118,6 @@ func New(
 	}
 
 	progress := opts.Progress
-	if progress <= 0 {
-		progress = 10
-	}
 
 	return &Mailbox{
 		config:       mbConfig,
@@ -339,7 +336,8 @@ func (m *Mailbox) copy() error {
 		return m.lastError
 	}
 
-	// Copy each folder.
+	// Copy each folder, accumulating errors so all folders are attempted.
+	var folderErrors int
 	for _, folder := range folders {
 		if folder.IsNoSelect() {
 			continue
@@ -349,8 +347,8 @@ func (m *Mailbox) copy() error {
 			m.logger.Warn("folder copy failed",
 				slog.String("folder", folder.Name),
 				slog.Any("error", err))
+			folderErrors++
 			// The target connection may be broken; reconnect before next folder.
-			// We need to disconnect and reconnect safely.
 			if disconnErr := m.disconnect(); disconnErr != nil {
 				m.logger.Warn("error while disconnecting before reconnect",
 					slog.Any("error", disconnErr))
@@ -370,16 +368,18 @@ func (m *Mailbox) copy() error {
 	m.mu.Lock()
 	m.lastSync = time.Now()
 	m.syncCount++
-	// We are reading protected fields here, so we need lock or use local vars.
-	// But logging is safe to do inside lock or copy to locals.
+	// Copy stats under lock to avoid holding the lock during logging.
 	copied := m.messagesCopied
 	skipped := m.messagesSkipped
 	m.mu.Unlock()
 
-	m.state.UpdateLastSync(m.config.Name, "")
+	m.state.UpdateMailboxLastSync(m.config.Name)
 	m.logger.Info("full copy completed",
 		slog.Int64("messages_copied", copied),
 		slog.Int64("messages_skipped", skipped))
 
+	if folderErrors > 0 {
+		return fmt.Errorf("%d folder(s) failed to copy", folderErrors)
+	}
 	return nil
 }
