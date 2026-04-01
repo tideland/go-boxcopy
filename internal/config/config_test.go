@@ -313,6 +313,44 @@ func TestConfigValidate(t *testing.T) {
 	})
 }
 
+// TestConfigValidateMailboxFields tests that Validate catches blank per-mailbox
+// fields that only the loader normally prevents (fix 3.5).
+func TestConfigValidateMailboxFields(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			General:   GeneralConfig{StateFile: "/tmp/s.dat", LogLevel: "info", Progress: 10},
+			CopyParam: CopyParameters{MessagesPerSecond: 10, MaxConnections: 5},
+			Source:    ServerConfig{Host: "src.example.com", Port: 993, TLS: true},
+			Target:    ServerConfig{Host: "tgt.example.com", Port: 993, TLS: true},
+			Mailboxes: []MailboxConfig{
+				{Name: "u", SourceUser: "u@src", SourcePassword: "x", TargetUser: "u@tgt", TargetPassword: "y"},
+			},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*Config)
+		wantErr string
+	}{
+		{"empty name", func(c *Config) { c.Mailboxes[0].Name = "" }, "name is required"},
+		{"empty source_user", func(c *Config) { c.Mailboxes[0].SourceUser = "" }, "source_user is required"},
+		{"empty source_password", func(c *Config) { c.Mailboxes[0].SourcePassword = "" }, "source_password is required"},
+		{"empty target_user", func(c *Config) { c.Mailboxes[0].TargetUser = "" }, "target_user is required"},
+		{"empty target_password", func(c *Config) { c.Mailboxes[0].TargetPassword = "" }, "target_password is required"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := base()
+			tt.mutate(cfg)
+			err := cfg.Validate()
+			verify.Error(t, err)
+			verify.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
 // TestValidateLogLevelWarning tests that "warning" is accepted as a valid log level
 // (fix 1.5: isValidLogLevel previously rejected "warning" while setupLogger accepted it).
 func TestValidateLogLevelWarning(t *testing.T) {

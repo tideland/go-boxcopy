@@ -107,7 +107,7 @@ func dryRun(cfg *config.Config, logger *slog.Logger) error {
 }
 
 // performCopy runs the full copy: safety confirmation → target cleanup → copy.
-func performCopy(cfg *config.Config, opts *Options, logger *slog.Logger) error {
+func performCopy(cfg *config.Config, opts *Options, logger *slog.Logger) (retErr error) {
 	// Determine input source for confirmation prompt.
 	input := opts.Input
 	if input == nil {
@@ -157,7 +157,11 @@ func performCopy(cfg *config.Config, opts *Options, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("failed to create worker pool: %w", err)
 	}
-	defer worker.Stop(pool) //nolint:errcheck
+	defer func() {
+		if err := worker.Stop(pool); err != nil && retErr == nil {
+			retErr = fmt.Errorf("failed to stop worker pool: %w", err)
+		}
+	}()
 
 	var (
 		mu         sync.Mutex

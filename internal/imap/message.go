@@ -100,6 +100,84 @@ func FullFetchOptions() *FetchOptions {
 	}
 }
 
+// buildFetchOpts converts FetchOptions into the imap library's FetchOptions.
+func buildFetchOpts(opts *FetchOptions) *imap.FetchOptions {
+	fo := &imap.FetchOptions{
+		UID:          opts.UID,
+		Flags:        opts.Flags,
+		InternalDate: opts.InternalDate,
+		RFC822Size:   opts.Size,
+		Envelope:     opts.Envelope,
+	}
+	if opts.Body {
+		fo.BodySection = []*imap.FetchItemBodySection{{Peek: opts.BodyPeek}}
+	}
+	return fo
+}
+
+// parseFetchMessage maps the items from a single IMAP fetch response into a
+// Message. It returns an error if the server returns an invalid UID (0) or
+// omits the UID when opts.UID is true.
+func parseFetchMessage(msg *imapclient.FetchMessageData, opts *FetchOptions) (Message, error) {
+	message := Message{SeqNum: msg.SeqNum}
+
+	for {
+		item := msg.Next()
+		if item == nil {
+			break
+		}
+
+		switch data := item.(type) {
+		case imapclient.FetchItemDataUID:
+			if data.UID == 0 {
+				return Message{}, fmt.Errorf("server returned invalid UID 0 for message seqnum %d", msg.SeqNum)
+			}
+			message.UID = uint32(data.UID)
+		case imapclient.FetchItemDataFlags:
+			message.Flags = convertFlags(data.Flags)
+		case imapclient.FetchItemDataInternalDate:
+			message.InternalDate = data.Time
+		case imapclient.FetchItemDataRFC822Size:
+			message.Size = uint32(data.Size)
+		case imapclient.FetchItemDataEnvelope:
+			message.Envelope = convertEnvelope(data.Envelope)
+		case imapclient.FetchItemDataBodySection:
+			body, err := io.ReadAll(data.Literal)
+			if err != nil {
+				return Message{}, fmt.Errorf("failed to read message body: %w", err)
+			}
+			message.Body = body
+		}
+	}
+
+	if opts.UID && message.UID == 0 {
+		return Message{}, fmt.Errorf("server did not return UID for message seqnum %d", msg.SeqNum)
+	}
+
+	return message, nil
+}
+
+// drainFetchCmd collects all messages from a fetch command into a slice.
+func drainFetchCmd(fetchCmd *imapclient.FetchCommand, opts *FetchOptions) ([]Message, error) {
+	var messages []Message
+	for {
+		msg := fetchCmd.Next()
+		if msg == nil {
+			break
+		}
+		m, err := parseFetchMessage(msg, opts)
+		if err != nil {
+			fetchCmd.Close() //nolint:errcheck
+			return nil, err
+		}
+		messages = append(messages, m)
+	}
+	if err := fetchCmd.Close(); err != nil {
+		return nil, fmt.Errorf("fetch failed: %w", err)
+	}
+	return messages, nil
+}
+
 // FetchByUID fetches messages by their UIDs.
 func (c *Client) FetchByUID(uids []uint32, opts *FetchOptions) ([]Message, error) {
 	if len(uids) == 0 {
@@ -115,91 +193,22 @@ func (c *Client) FetchByUID(uids []uint32, opts *FetchOptions) ([]Message, error
 
 	c.logger.Debug("fetching messages by UID", slog.Int("count", len(uids)))
 
-	// Build UID set.
 	uidSet := imap.UIDSet{}
 	for _, uid := range uids {
 		uidSet.AddNum(imap.UID(uid))
 	}
 
-	// Build fetch options.
-	fetchOpts := &imap.FetchOptions{
-		UID:          opts.UID,
-		Flags:        opts.Flags,
-		InternalDate: opts.InternalDate,
-		RFC822Size:   opts.Size,
-		Envelope:     opts.Envelope,
-	}
-
-	if opts.Body {
-		section := &imap.FetchItemBodySection{
-			Peek: opts.BodyPeek,
-		}
-		fetchOpts.BodySection = []*imap.FetchItemBodySection{section}
-	}
-
-	// Execute fetch.
-	fetchCmd := c.client.Fetch(uidSet, fetchOpts)
-
-	var messages []Message
-	for {
-		msg := fetchCmd.Next()
-		if msg == nil {
-			break
-		}
-
-		message := Message{
-			SeqNum: msg.SeqNum,
-		}
-
-		// Process fetch items.
-		for {
-			item := msg.Next()
-			if item == nil {
-				break
-			}
-
-			switch data := item.(type) {
-			case imapclient.FetchItemDataUID:
-				if data.UID == 0 {
-					fetchCmd.Close() //nolint:errcheck
-					return nil, fmt.Errorf("server returned invalid UID 0 for message seqnum %d", msg.SeqNum)
-				}
-				message.UID = uint32(data.UID)
-			case imapclient.FetchItemDataFlags:
-				message.Flags = convertFlags(data.Flags)
-			case imapclient.FetchItemDataInternalDate:
-				message.InternalDate = data.Time
-			case imapclient.FetchItemDataRFC822Size:
-				message.Size = uint32(data.Size)
-			case imapclient.FetchItemDataEnvelope:
-				message.Envelope = convertEnvelope(data.Envelope)
-			case imapclient.FetchItemDataBodySection:
-				body, err := io.ReadAll(data.Literal)
-				if err != nil {
-					fetchCmd.Close() //nolint:errcheck
-					return nil, fmt.Errorf("failed to read message body: %w", err)
-				}
-				message.Body = body
-			}
-		}
-
-		if opts.UID && message.UID == 0 {
-			fetchCmd.Close() //nolint:errcheck
-			return nil, fmt.Errorf("server did not return UID for message seqnum %d", msg.SeqNum)
-		}
-
-		messages = append(messages, message)
-	}
-
-	if err := fetchCmd.Close(); err != nil {
-		return nil, fmt.Errorf("fetch failed: %w", err)
+	messages, err := drainFetchCmd(c.client.Fetch(uidSet, buildFetchOpts(opts)), opts)
+	if err != nil {
+		return nil, err
 	}
 
 	c.logger.Debug("messages fetched", slog.Int("count", len(messages)))
 	return messages, nil
 }
 
-// FetchAll fetches all messages in the currently selected mailbox.
+// FetchAll fetches all messages in the currently selected mailbox using a
+// UID range (1:*) to avoid sequence-number instability from concurrent expunges.
 func (c *Client) FetchAll(opts *FetchOptions) ([]Message, error) {
 	if opts == nil {
 		opts = DefaultFetchOptions()
@@ -210,81 +219,13 @@ func (c *Client) FetchAll(opts *FetchOptions) ([]Message, error) {
 
 	c.logger.Debug("fetching all messages")
 
-	// Use sequence set 1:* for all messages.
-	seqSet := imap.SeqSet{}
-	seqSet.AddRange(1, 0) // 0 means * (last message)
+	// Use UID range 1:* — stable against concurrent expunges.
+	uidSet := imap.UIDSet{}
+	uidSet.AddRange(imap.UID(1), 0) // 0 means * (last message)
 
-	// Build fetch options.
-	fetchOpts := &imap.FetchOptions{
-		UID:          opts.UID,
-		Flags:        opts.Flags,
-		InternalDate: opts.InternalDate,
-		RFC822Size:   opts.Size,
-		Envelope:     opts.Envelope,
-	}
-
-	if opts.Body {
-		section := &imap.FetchItemBodySection{
-			Peek: opts.BodyPeek,
-		}
-		fetchOpts.BodySection = []*imap.FetchItemBodySection{section}
-	}
-
-	// Execute fetch.
-	fetchCmd := c.client.Fetch(seqSet, fetchOpts)
-
-	var messages []Message
-	for {
-		msg := fetchCmd.Next()
-		if msg == nil {
-			break
-		}
-
-		message := Message{
-			SeqNum: msg.SeqNum,
-		}
-
-		for {
-			item := msg.Next()
-			if item == nil {
-				break
-			}
-
-			switch data := item.(type) {
-			case imapclient.FetchItemDataUID:
-				if data.UID == 0 {
-					fetchCmd.Close() //nolint:errcheck
-					return nil, fmt.Errorf("server returned invalid UID 0 for message seqnum %d", msg.SeqNum)
-				}
-				message.UID = uint32(data.UID)
-			case imapclient.FetchItemDataFlags:
-				message.Flags = convertFlags(data.Flags)
-			case imapclient.FetchItemDataInternalDate:
-				message.InternalDate = data.Time
-			case imapclient.FetchItemDataRFC822Size:
-				message.Size = uint32(data.Size)
-			case imapclient.FetchItemDataEnvelope:
-				message.Envelope = convertEnvelope(data.Envelope)
-			case imapclient.FetchItemDataBodySection:
-				body, err := io.ReadAll(data.Literal)
-				if err != nil {
-					fetchCmd.Close() //nolint:errcheck
-					return nil, fmt.Errorf("failed to read message body: %w", err)
-				}
-				message.Body = body
-			}
-		}
-
-		if opts.UID && message.UID == 0 {
-			fetchCmd.Close() //nolint:errcheck
-			return nil, fmt.Errorf("server did not return UID for message seqnum %d", msg.SeqNum)
-		}
-
-		messages = append(messages, message)
-	}
-
-	if err := fetchCmd.Close(); err != nil {
-		return nil, fmt.Errorf("fetch failed: %w", err)
+	messages, err := drainFetchCmd(c.client.Fetch(uidSet, buildFetchOpts(opts)), opts)
+	if err != nil {
+		return nil, err
 	}
 
 	c.logger.Debug("all messages fetched", slog.Int("count", len(messages)))
@@ -292,18 +233,19 @@ func (c *Client) FetchAll(opts *FetchOptions) ([]Message, error) {
 }
 
 // FetchAllSizes fetches RFC822.SIZE for every message in the currently
-// selected mailbox and returns the total in bytes. The mailbox must be
-// selected before calling this method. No message bodies are downloaded.
+// selected mailbox and returns the total in bytes. Uses a UID range (1:*)
+// to avoid sequence-number instability from concurrent expunges.
 func (c *Client) FetchAllSizes() (uint64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	c.logger.Debug("fetching all message sizes")
 
-	seqSet := imap.SeqSet{}
-	seqSet.AddRange(1, 0) // 1:* — all messages
+	// Use UID range 1:* — stable against concurrent expunges.
+	uidSet := imap.UIDSet{}
+	uidSet.AddRange(imap.UID(1), 0) // 0 means * (last message)
 
-	fetchCmd := c.client.Fetch(seqSet, &imap.FetchOptions{RFC822Size: true})
+	fetchCmd := c.client.Fetch(uidSet, &imap.FetchOptions{RFC822Size: true})
 
 	var total uint64
 	for {
