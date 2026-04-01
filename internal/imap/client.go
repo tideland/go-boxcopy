@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
@@ -25,12 +26,17 @@ type Client struct {
 	user     string
 	selected string
 	logger   *slog.Logger
+	done     chan struct{} // closed by Close() to stop the keepalive goroutine
 }
 
 // Options configures client behavior.
 type Options struct {
 	Logger    *slog.Logger
 	TLSConfig *tls.Config
+
+	// KeepaliveInterval sets how often a NOOP command is sent to keep the
+	// connection alive during idle periods. Zero disables keepalive.
+	KeepaliveInterval time.Duration
 }
 
 // DefaultOptions returns default client options.
@@ -86,12 +92,38 @@ func Dial(server config.ServerConfig, user, password string, opts *Options) (*Cl
 
 	logger.Info("connected and authenticated")
 
-	return &Client{
+	c := &Client{
 		client: client,
 		server: server,
 		user:   user,
 		logger: logger,
-	}, nil
+		done:   make(chan struct{}),
+	}
+	if opts.KeepaliveInterval > 0 {
+		c.startKeepalive(opts.KeepaliveInterval)
+	}
+	return c, nil
+}
+
+// startKeepalive launches a background goroutine that sends a NOOP command
+// every interval to prevent the server from closing an idle connection.
+func (c *Client) startKeepalive(interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := c.Noop(); err != nil {
+					c.logger.Warn("keepalive NOOP failed, stopping keepalive",
+						slog.Any("error", err))
+					return
+				}
+			case <-c.done:
+				return
+			}
+		}
+	}()
 }
 
 // Close closes the IMAP connection gracefully.
@@ -101,6 +133,12 @@ func (c *Client) Close() error {
 
 	if c.client == nil {
 		return nil
+	}
+
+	// Signal the keepalive goroutine to stop before tearing down the connection.
+	if c.done != nil {
+		close(c.done)
+		c.done = nil
 	}
 
 	c.logger.Debug("logging out")
@@ -206,6 +244,9 @@ func (c *Client) Noop() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.client == nil {
+		return nil
+	}
 	if err := c.client.Noop().Wait(); err != nil {
 		return fmt.Errorf("NOOP failed: %w", err)
 	}

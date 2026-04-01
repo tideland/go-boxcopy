@@ -8,6 +8,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -38,7 +39,7 @@ func TestGetMailbox(t *testing.T) {
 
 	// Check mailbox list.
 	names := s.Mailboxes()
-	verify.Equal(t, len(names), 1)
+	verify.Length(t, names, 1)
 	verify.Equal(t, names[0], "user1")
 }
 
@@ -56,12 +57,12 @@ func TestGetFolder(t *testing.T) {
 
 	// Check folder list.
 	folders := s.Folders("user1")
-	verify.Equal(t, len(folders), 1)
+	verify.Length(t, folders, 1)
 	verify.Equal(t, folders[0], "INBOX")
 
-	// Non-existent mailbox should return nil.
+	// Non-existent mailbox should return no folders.
 	nonExistentFolders := s.Folders("nonexistent")
-	verify.True(t, nonExistentFolders == nil)
+	verify.Length(t, nonExistentFolders, 0)
 }
 
 // TestUIDValidity tests UIDValidity tracking.
@@ -148,7 +149,7 @@ func TestGetUnsyncedUIDs(t *testing.T) {
 	allUIDs := []uint32{100, 200, 300, 400, 500}
 	unsynced := s.GetUnsyncedUIDs("user1", "INBOX", allUIDs)
 
-	verify.Equal(t, len(unsynced), 2)
+	verify.Length(t, unsynced, 2)
 	verify.True(t, contains(unsynced, 400))
 	verify.True(t, contains(unsynced, 500))
 	verify.False(t, contains(unsynced, 100))
@@ -172,8 +173,7 @@ func TestLastSync(t *testing.T) {
 	after := time.Now()
 
 	lastSync = s.GetLastSync("user1", "INBOX")
-	verify.True(t, !lastSync.Before(before))
-	verify.True(t, !lastSync.After(after))
+	verify.Between(t, lastSync, before, after)
 
 	// Check mailbox sync count.
 	ms := s.GetMailbox("user1")
@@ -208,13 +208,12 @@ func TestUpdateMailboxLastSync(t *testing.T) {
 
 	// Mailbox LastSync and SyncCount should be updated.
 	ms := s.GetMailbox("user1")
-	verify.True(t, !ms.LastSync.Before(before))
-	verify.True(t, !ms.LastSync.After(after))
+	verify.Between(t, ms.LastSync, before, after)
 	verify.Equal(t, ms.SyncCount, int64(1))
 
 	// No folder entries must have been created.
 	folders := s.Folders("user1")
-	verify.Equal(t, len(folders), 0)
+	verify.Length(t, folders, 0)
 }
 
 // TestClearMailbox tests clearing entire mailbox state.
@@ -224,11 +223,11 @@ func TestClearMailbox(t *testing.T) {
 	s.MarkSynced("user1", "INBOX", 100)
 	s.MarkSynced("user1", "Sent", 200)
 
-	verify.Equal(t, len(s.Folders("user1")), 2)
+	verify.Length(t, s.Folders("user1"), 2)
 
 	s.ClearMailbox("user1")
 
-	verify.Equal(t, len(s.Folders("user1")), 0)
+	verify.Length(t, s.Folders("user1"), 0)
 }
 
 // TestUIDSet tests UIDSet methods.
@@ -249,7 +248,7 @@ func TestUIDSet(t *testing.T) {
 	verify.False(t, u.Contains(200))
 
 	slice := u.ToSlice()
-	verify.Equal(t, len(slice), 2)
+	verify.Length(t, slice, 2)
 }
 
 // TestSaveLoad tests state persistence.
@@ -285,7 +284,7 @@ func TestLoadNonExistent(t *testing.T) {
 	s, err := Load("/tmp/nonexistent_state_file_12345.json")
 	verify.NoError(t, err)
 	verify.NotNil(t, s)
-	verify.Equal(t, len(s.Mailboxes()), 0)
+	verify.Length(t, s.Mailboxes(), 0)
 }
 
 // TestSaveIfDirty tests conditional save.
@@ -332,7 +331,7 @@ func TestExport(t *testing.T) {
 	s.MarkSynced("user1", "INBOX", 100)
 
 	export := s.Export()
-	verify.True(t, len(export) > 0)
+	verify.Positive(t, len(export))
 	verify.True(t, stringContains(export, "user1"))
 	verify.True(t, stringContains(export, "INBOX"))
 }
@@ -340,12 +339,7 @@ func TestExport(t *testing.T) {
 // Helper functions
 
 func contains(slice []uint32, val uint32) bool {
-	for _, v := range slice {
-		if v == val {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, val)
 }
 
 func stringContains(s, substr string) bool {

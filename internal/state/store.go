@@ -23,8 +23,13 @@ type stateFile struct {
 const currentVersion = 1
 
 // Load loads state from a file. If the file doesn't exist, returns empty state.
+// Any leftover .tmp file from a previous interrupted save is removed first.
 func Load(path string) (*State, error) {
 	s := New(path)
+
+	// Remove any stale temp file left by a previously interrupted save.
+	// Errors are intentionally ignored — the .tmp file is not authoritative.
+	os.Remove(path + ".tmp") //nolint:errcheck
 
 	data, err := os.ReadFile(path)
 	if err != nil {
