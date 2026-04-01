@@ -7,9 +7,13 @@ package verifier
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"testing"
 
 	"tideland.dev/go/asserts/verify"
+
+	"tideland.dev/go/boxcopy/internal/config"
 )
 
 // TestFolderResultOK tests the FolderResult.OK method.
@@ -124,4 +128,83 @@ func TestVerifyNonExistentConfig(t *testing.T) {
 		EncryptionKey: "somekey",
 	})
 	verify.NotNil(t, err)
+}
+
+// TestVerifyRejectsInvalidConfig tests that Verify validates the config and returns
+// an error for invalid settings (fix 2.1: verifier previously skipped Validate()).
+func TestVerifyRejectsInvalidConfig(t *testing.T) {
+	// Build a minimal valid TOML config with an invalid value.
+	toml := `
+[source]
+host = "imap.src.com"
+
+[target]
+host = "imap.tgt.com"
+
+[general]
+log_level = "verbose"
+
+[[mailbox]]
+name = "u"
+source_user = "u@src"
+source_password = "x"
+target_user = "u@tgt"
+target_password = "y"
+`
+	f, err := os.CreateTemp("", "boxcopy_verify_test*.toml")
+	verify.NoError(t, err)
+	t.Cleanup(func() { os.Remove(f.Name()) })
+	fmt.Fprint(f, toml)
+	f.Close()
+
+	_, err = Verify(&Options{
+		ConfigPath:    f.Name(),
+		EncryptionKey: "testkey",
+	})
+	verify.Error(t, err)
+	verify.ErrorContains(t, err, "invalid config")
+}
+
+// TestVerifyLogLevelFromConfig tests that an empty ExplicitLogLevel falls back to the
+// config's log_level without error, and that config loading succeeds (fix 2.6).
+func TestVerifyLogLevelFromConfig(t *testing.T) {
+	encKey := "testkey"
+	srcPwd, err := config.EncryptPassword("p", encKey)
+	verify.NoError(t, err)
+	tgtPwd, err := config.EncryptPassword("p", encKey)
+	verify.NoError(t, err)
+
+	toml := fmt.Sprintf(`
+[source]
+host = "127.0.0.1"
+port = 19993
+tls = false
+[target]
+host = "127.0.0.1"
+port = 19994
+tls = false
+[general]
+log_level = "debug"
+[[mailbox]]
+name = "u"
+source_user = "u@src"
+source_password = %q
+target_user = "u@tgt"
+target_password = %q
+`, srcPwd, tgtPwd)
+
+	f, err := os.CreateTemp("", "boxcopy_verify_loglevel*.toml")
+	verify.NoError(t, err)
+	t.Cleanup(func() { os.Remove(f.Name()) })
+	fmt.Fprint(f, toml)
+	f.Close()
+
+	// No ExplicitLogLevel → falls back to config's "debug".
+	// Verify itself must return nil (config is valid); per-mailbox connect errors
+	// are stored in MailboxResult.Err, not returned as a function error.
+	results, err := Verify(&Options{ConfigPath: f.Name(), EncryptionKey: encKey})
+	verify.NoError(t, err)
+	verify.Positive(t, len(results))
+	// Connect will fail (no server on those ports), but that is a per-mailbox error.
+	verify.NotNil(t, results[0].Err)
 }
