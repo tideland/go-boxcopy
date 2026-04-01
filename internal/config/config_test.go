@@ -312,3 +312,29 @@ func TestConfigValidate(t *testing.T) {
 		verify.Error(t, cfg.Validate())
 	})
 }
+
+// TestValidateLogLevelWarning tests that "warning" is accepted as a valid log level
+// (fix 1.5: isValidLogLevel previously rejected "warning" while setupLogger accepted it).
+func TestValidateLogLevelWarning(t *testing.T) {
+	base := &Config{
+		General:   GeneralConfig{StateFile: "/tmp/s.dat", Progress: 10},
+		CopyParam: CopyParameters{MessagesPerSecond: 10, MaxConnections: 5},
+		Source:    ServerConfig{Host: "imap.src.com", Port: 993, TLS: true},
+		Target:    ServerConfig{Host: "imap.tgt.com", Port: 993, TLS: true},
+		Mailboxes: []MailboxConfig{{Name: "u", SourceUser: "a", SourcePassword: "x", TargetUser: "b", TargetPassword: "y"}},
+	}
+
+	for _, level := range []string{"debug", "info", "warn", "warning", "error"} {
+		t.Run(level, func(t *testing.T) {
+			cfg := *base
+			cfg.General.LogLevel = level
+			verify.NoError(t, cfg.Validate())
+		})
+	}
+
+	t.Run("invalid level rejected", func(t *testing.T) {
+		cfg := *base
+		cfg.General.LogLevel = "verbose"
+		verify.Error(t, cfg.Validate())
+	})
+}

@@ -197,6 +197,26 @@ func TestClearFolder(t *testing.T) {
 	verify.True(t, s.GetLastSync("user1", "INBOX").IsZero())
 }
 
+// TestUpdateMailboxLastSync tests that UpdateMailboxLastSync updates the mailbox
+// timestamp without creating a phantom folder entry (fix 1.4).
+func TestUpdateMailboxLastSync(t *testing.T) {
+	s := New("/tmp/test.json")
+
+	before := time.Now()
+	s.UpdateMailboxLastSync("user1")
+	after := time.Now()
+
+	// Mailbox LastSync and SyncCount should be updated.
+	ms := s.GetMailbox("user1")
+	verify.True(t, !ms.LastSync.Before(before))
+	verify.True(t, !ms.LastSync.After(after))
+	verify.Equal(t, ms.SyncCount, int64(1))
+
+	// No folder entries must have been created.
+	folders := s.Folders("user1")
+	verify.Equal(t, len(folders), 0)
+}
+
 // TestClearMailbox tests clearing entire mailbox state.
 func TestClearMailbox(t *testing.T) {
 	s := New("/tmp/test.json")

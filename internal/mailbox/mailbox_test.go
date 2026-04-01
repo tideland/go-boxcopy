@@ -160,6 +160,37 @@ func TestMailboxWithCustomOptions(t *testing.T) {
 	verify.Equal(t, mb.Name(), "customopts")
 }
 
+// TestMailboxProgressZeroDisabled tests that progress=0 is preserved and not
+// silently clamped to 10 (fix 1.3: progress=0 must disable milestone logging).
+func TestMailboxProgressZeroDisabled(t *testing.T) {
+	mbConfig := config.MailboxConfig{
+		Name: "progtest", SourceUser: "u@src", SourcePassword: "p",
+		TargetUser: "u@tgt", TargetPassword: "p",
+	}
+	src := config.ServerConfig{Host: "127.0.0.1", Port: 19993, TLS: false}
+	tgt := config.ServerConfig{Host: "127.0.0.1", Port: 19994, TLS: false}
+	syncState := state.New("/tmp/prog_test_state.json")
+
+	mb := New(mbConfig, src, tgt, syncState, &Options{Progress: 0})
+	verify.NotNil(t, mb)
+	// progress field must be 0, not silently changed to 10.
+	verify.Equal(t, mb.progress, 0)
+}
+
+// TestMailboxProgressDefaultTen tests that a positive progress value is kept as-is.
+func TestMailboxProgressDefaultTen(t *testing.T) {
+	mbConfig := config.MailboxConfig{
+		Name: "progtest2", SourceUser: "u@src", SourcePassword: "p",
+		TargetUser: "u@tgt", TargetPassword: "p",
+	}
+	src := config.ServerConfig{Host: "127.0.0.1", Port: 19993, TLS: false}
+	tgt := config.ServerConfig{Host: "127.0.0.1", Port: 19994, TLS: false}
+	syncState := state.New("/tmp/prog_test_state2.json")
+
+	mb := New(mbConfig, src, tgt, syncState, &Options{Progress: 25})
+	verify.Equal(t, mb.progress, 25)
+}
+
 // TestMailboxConnectWithoutServer tests that connect fails gracefully
 // when no server is available.
 func TestMailboxConnectWithoutServer(t *testing.T) {

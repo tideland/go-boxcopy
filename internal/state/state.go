@@ -361,6 +361,18 @@ func (s *State) UpdateLastSync(mailbox, folder string) {
 	s.dirty = true
 }
 
+// UpdateMailboxLastSync updates the last sync timestamp for an entire mailbox
+// without touching any folder state. Use this after a full-mailbox copy completes.
+func (s *State) UpdateMailboxLastSync(mailbox string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ms := s.getOrCreateMailbox(mailbox)
+	ms.LastSync = time.Now()
+	ms.SyncCount++
+	s.dirty = true
+}
+
 // GetLastSync returns the last sync timestamp for a folder.
 func (s *State) GetLastSync(mailbox, folder string) time.Time {
 	s.mu.RLock()

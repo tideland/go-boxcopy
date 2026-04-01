@@ -185,7 +185,10 @@ func (m *Mailbox) copyFolder(folderName string) error {
 	total := len(unsyncedUIDs)
 	nextMilestone := m.progress
 	currentIdx := 0
-	var copyErr error
+	var (
+		copyErr      error
+		msgFailCount int
+	)
 
 	for b := range batchChan {
 		if b.err != nil {
@@ -193,13 +196,13 @@ func (m *Mailbox) copyFolder(folderName string) error {
 			if copyErr == nil {
 				copyErr = fmt.Errorf("fetch failed: %w", b.err)
 			}
-			// Drain channel if needed, but loop continues to consume remaining batches if any?
-			// Fetcher stops on error, so channel will close.
+			// Fetcher closed the channel after the error; the range loop
+			// will exit on the next iteration.
 			continue
 		}
 
 		for _, msg := range b.msgs {
-			// Check context in copier loop too
+			// Check context in copier loop too.
 			if m.ctx.Err() != nil {
 				if copyErr == nil {
 					copyErr = m.ctx.Err()
@@ -212,13 +215,14 @@ func (m *Mailbox) copyFolder(folderName string) error {
 					slog.String("folder", folderName),
 					slog.Uint64("uid", uint64(msg.UID)),
 					slog.Any("error", err))
+				msgFailCount++
 				// Continue with other messages.
 			}
 
 			currentIdx++
 
-			// Progress milestone logging.
-			if total > 0 && nextMilestone > 0 && nextMilestone <= 100 {
+			// Progress milestone logging (disabled when m.progress == 0).
+			if m.progress > 0 && total > 0 && nextMilestone > 0 && nextMilestone <= 100 {
 				pct := currentIdx * 100 / total
 				if pct >= nextMilestone {
 					m.logger.Info("copy progress",
@@ -229,6 +233,15 @@ func (m *Mailbox) copyFolder(folderName string) error {
 					nextMilestone += m.progress
 				}
 			}
+		}
+	}
+
+	if msgFailCount > 0 {
+		m.logger.Error("folder copy completed with message errors",
+			slog.String("folder", folderName),
+			slog.Int("failed_messages", msgFailCount))
+		if copyErr == nil {
+			copyErr = fmt.Errorf("%d message(s) failed to copy in folder %s", msgFailCount, folderName)
 		}
 	}
 
