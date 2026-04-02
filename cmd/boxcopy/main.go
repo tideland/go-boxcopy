@@ -7,6 +7,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -119,14 +120,19 @@ Examples:
 
 // cmdCopy runs a copy cycle.
 func cmdCopy(args []string) error {
-	fs := flag.NewFlagSet("copy", flag.ExitOnError)
+	fs := flag.NewFlagSet("copy", flag.ContinueOnError)
 	cfgPath := fs.String("c", defaultConfigPath, "Path to configuration file")
 	fs.StringVar(cfgPath, "config", defaultConfigPath, "Path to configuration file")
 	key := fs.String("k", "", "Encryption key for passwords (required)")
 	fs.StringVar(key, "key", "", "Encryption key for passwords (required)")
 	perform := fs.Bool("perform", false, "Perform the actual copy (default is dry-run)")
 	logLvl := fs.String("log-level", "", "Log level (debug, info, warn, error)")
-	fs.Parse(args) //nolint:errcheck
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
 
 	if *key == "" {
 		return fmt.Errorf("encryption key is required: use -k <key>")
@@ -144,10 +150,15 @@ func cmdCopy(args []string) error {
 
 // cmdEncryptPassword encrypts a password.
 func cmdEncryptPassword(args []string) error {
-	fs := flag.NewFlagSet("encrypt-password", flag.ExitOnError)
+	fs := flag.NewFlagSet("encrypt-password", flag.ContinueOnError)
 	key := fs.String("k", "", "Encryption key (required)")
 	fs.StringVar(key, "key", "", "Encryption key (required)")
-	fs.Parse(args) //nolint:errcheck
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
 
 	if *key == "" {
 		return fmt.Errorf("encryption key is required: use -k <key>")
@@ -180,12 +191,17 @@ func cmdEncryptPassword(args []string) error {
 
 // cmdInit generates an initial configuration file.
 func cmdInit(args []string) error {
-	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	output := fs.String("o", defaultConfigPath, "Output path")
 	fs.StringVar(output, "output", defaultConfigPath, "Output path")
 	force := fs.Bool("f", false, "Overwrite existing file")
 	fs.BoolVar(force, "force", false, "Overwrite existing file")
-	fs.Parse(args) //nolint:errcheck
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
 
 	outPath := expandPath(*output)
 
@@ -270,13 +286,18 @@ target_password = "PASTE_ENCRYPTED_PASSWORD_HERE"
 // cmdVerify runs the verify command: compares source and target mail trees
 // folder by folder, checking message counts and total RFC822 sizes.
 func cmdVerify(args []string) error {
-	fs := flag.NewFlagSet("verify", flag.ExitOnError)
+	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	cfgPath := fs.String("c", defaultConfigPath, "Path to configuration file")
 	fs.StringVar(cfgPath, "config", defaultConfigPath, "Path to configuration file")
 	key := fs.String("k", "", "Encryption key for passwords (required)")
 	fs.StringVar(key, "key", "", "Encryption key for passwords (required)")
 	logLvl := fs.String("log-level", "", "Log level (debug, info, warn, error)")
-	fs.Parse(args) //nolint:errcheck
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
 
 	if *key == "" {
 		return fmt.Errorf("encryption key is required: use -k <key>")
