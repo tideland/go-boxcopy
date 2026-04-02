@@ -12,9 +12,11 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"tideland.dev/go/wait"
@@ -37,8 +39,21 @@ type Options struct {
 	// Perform enables the actual copy. Without it, a dry-run is performed.
 	Perform bool
 
-	// Logger for operations.
+	// Logger overrides the logger (used in tests). When nil the runner creates
+	// its own logger based on ExplicitLogLevel / config log_level.
 	Logger *slog.Logger
+
+	// ExplicitLogLevel is the raw --log-level CLI value. If empty and Logger
+	// is nil, the runner falls back to the config's log_level after loading it.
+	ExplicitLogLevel string
+
+	// MaxCopyDuration caps how long the parallel copy phase may run.
+	// Zero defaults to 24 hours.
+	MaxCopyDuration time.Duration
+
+	// Context for the copy operation. When nil, a signal-aware context that
+	// cancels on SIGINT/SIGTERM is created automatically.
+	Context context.Context
 
 	// Input overrides stdin for the safety prompt (used in tests).
 	Input io.Reader
@@ -51,38 +66,59 @@ func Run(opts *Options) error {
 		opts = &Options{}
 	}
 
-	logger := opts.Logger
-	if logger == nil {
-		logger = slog.Default()
-	}
-	logger = logger.With(slog.String("component", "boxcopy"))
-
 	if opts.ConfigPath == "" {
 		return fmt.Errorf("config path is required")
-	}
-
-	// Load configuration.
-	cfg, err := config.Load(opts.ConfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	if err := cfg.Validate(); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
 	}
 
 	if opts.EncryptionKey == "" {
 		return fmt.Errorf("encryption key is required (-k flag)")
 	}
+
+	// Load and validate configuration.
+	cfg, err := config.Load(opts.ConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid config: %w", err)
+	}
 	if err := cfg.DecryptMailboxPasswords(opts.EncryptionKey); err != nil {
 		return fmt.Errorf("failed to decrypt passwords: %w", err)
 	}
+
+	// Resolve logger: test-provided logger takes precedence; otherwise build
+	// one from the effective log level (CLI flag > config file).
+	logger := opts.Logger
+	if logger == nil {
+		levelStr := opts.ExplicitLogLevel
+		if levelStr == "" {
+			levelStr = cfg.General.LogLevel
+		}
+		logger = newLoggerForLevel(levelStr)
+	}
+	logger = logger.With(slog.String("component", "boxcopy"))
 
 	if !opts.Perform {
 		return dryRun(cfg, logger)
 	}
 
 	return performCopy(cfg, opts, logger)
+}
+
+// newLoggerForLevel creates a text logger writing to stderr at the given level.
+func newLoggerForLevel(level string) *slog.Logger {
+	var lvl slog.Level
+	switch strings.ToLower(level) {
+	case "debug":
+		lvl = slog.LevelDebug
+	case "warn", "warning":
+		lvl = slog.LevelWarn
+	case "error":
+		lvl = slog.LevelError
+	default:
+		lvl = slog.LevelInfo
+	}
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl}))
 }
 
 // dryRun shows what would be copied without making any changes.
@@ -120,7 +156,17 @@ func performCopy(cfg *config.Config, opts *Options, logger *slog.Logger) (retErr
 	}
 	logger.Info("copy confirmed by user")
 
-	// Step 2: Target cleanup — connect to each target mailbox, expunge all messages.
+	// Set up a context that cancels on SIGINT/SIGTERM for graceful shutdown.
+	// If the caller provides a context (e.g. in tests), use that instead.
+	ctx := opts.Context
+	if ctx == nil {
+		var stop context.CancelFunc
+		ctx, stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+	}
+
+	// Step 2: Target cleanup — connect to each target mailbox in parallel,
+	// expunge all messages, then delete all non-INBOX folders.
 	logger.Info("cleaning target mailboxes before copy")
 	if err := cleanTargets(cfg, logger); err != nil {
 		return fmt.Errorf("target cleanup failed: %w", err)
@@ -168,8 +214,6 @@ func performCopy(cfg *config.Config, opts *Options, logger *slog.Logger) (retErr
 		copyErrors int
 	)
 
-	ctx := context.Background()
-
 	for _, mbConfig := range cfg.Mailboxes {
 		mbConfig := mbConfig // capture for closure
 		mbLogger := logger.With(slog.String("mailbox", mbConfig.Name))
@@ -202,12 +246,18 @@ func performCopy(cfg *config.Config, opts *Options, logger *slog.Logger) (retErr
 		}
 	}
 
-	// Wait for all mailboxes to finish.
-	if err := worker.WaitForTasks(pool, 24*time.Hour); err != nil {
-		return fmt.Errorf("copy timed out: %w", err)
+	// Resolve copy timeout: use caller-supplied value or default to 24 hours.
+	copyTimeout := opts.MaxCopyDuration
+	if copyTimeout <= 0 {
+		copyTimeout = 24 * time.Hour
 	}
 
-	// Save final state.
+	// Wait for all mailboxes to finish.
+	if err := worker.WaitForTasks(pool, copyTimeout); err != nil {
+		return fmt.Errorf("copy timed out after %v: %w", copyTimeout, err)
+	}
+
+	// Always save state, even if some mailboxes failed.
 	if err := syncState.Save(); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
@@ -252,18 +302,50 @@ func confirmCopy(cfg *config.Config, input io.Reader) error {
 	return nil
 }
 
-// cleanTargets connects to each target mailbox, deletes all messages in all
-// folders, and expunges. Aborts if any folder cannot be cleaned.
+// cleanTargets connects to each target mailbox in parallel (up to MaxConnections
+// concurrent workers), deletes all messages in all folders, and expunges.
 func cleanTargets(cfg *config.Config, logger *slog.Logger) error {
+	pool, err := worker.NewWorkerPool(cfg.CopyParam.MaxConnections, worker.DefaultConfig())
+	if err != nil {
+		return fmt.Errorf("failed to create cleanup worker pool: %w", err)
+	}
+	defer worker.Stop(pool) //nolint:errcheck
+
+	var (
+		mu          sync.Mutex
+		cleanErrors int
+	)
+
 	for _, mbConfig := range cfg.Mailboxes {
+		mbConfig := mbConfig // capture for closure
 		mbLogger := logger.With(slog.String("mailbox", mbConfig.Name))
-		mbLogger.Info("cleaning target mailbox")
 
-		if err := cleanTargetMailbox(mbConfig, cfg.Target, mbLogger); err != nil {
-			return fmt.Errorf("mailbox %s: %w", mbConfig.Name, err)
+		if err := worker.Enqueue(pool, func() error {
+			mbLogger.Info("cleaning target mailbox")
+			if err := cleanTargetMailbox(mbConfig, cfg.Target, mbLogger); err != nil {
+				mbLogger.Error("failed to clean target mailbox", slog.Any("error", err))
+				mu.Lock()
+				cleanErrors++
+				mu.Unlock()
+				return err
+			}
+			mbLogger.Info("target mailbox cleaned")
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to enqueue cleanup for mailbox %s: %w", mbConfig.Name, err)
 		}
+	}
 
-		mbLogger.Info("target mailbox cleaned")
+	if err := worker.WaitForTasks(pool, 30*time.Minute); err != nil {
+		return fmt.Errorf("target cleanup timed out: %w", err)
+	}
+
+	mu.Lock()
+	errs := cleanErrors
+	mu.Unlock()
+
+	if errs > 0 {
+		return fmt.Errorf("%d mailbox(es) failed to clean", errs)
 	}
 	return nil
 }

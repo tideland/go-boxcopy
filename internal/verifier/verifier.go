@@ -8,7 +8,9 @@ package verifier
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"sort"
+	"strings"
 
 	"tideland.dev/go/boxcopy/internal/config"
 	"tideland.dev/go/boxcopy/internal/imap"
@@ -57,7 +59,14 @@ func (r *MailboxResult) OK() bool {
 type Options struct {
 	ConfigPath    string
 	EncryptionKey string
-	Logger        *slog.Logger
+
+	// Logger overrides the logger (used in tests). When nil the verifier builds
+	// its own logger based on ExplicitLogLevel / config log_level.
+	Logger *slog.Logger
+
+	// ExplicitLogLevel is the raw --log-level CLI value. If empty and Logger is
+	// nil, the verifier falls back to the config's log_level after loading it.
+	ExplicitLogLevel string
 }
 
 // Verify connects to each source/target mailbox pair defined in the config and
@@ -75,13 +84,21 @@ func Verify(opts *Options) ([]MailboxResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
 	if err := cfg.DecryptMailboxPasswords(opts.EncryptionKey); err != nil {
 		return nil, fmt.Errorf("failed to decrypt passwords: %w", err)
 	}
 
+	// Resolve logger: test-provided logger > CLI level > config log_level.
 	logger := opts.Logger
 	if logger == nil {
-		logger = slog.Default()
+		levelStr := opts.ExplicitLogLevel
+		if levelStr == "" {
+			levelStr = cfg.General.LogLevel
+		}
+		logger = newLoggerForLevel(levelStr)
 	}
 
 	var results []MailboxResult
@@ -221,4 +238,20 @@ func folderTotalSize(c *imap.Client, name string) (uint64, error) {
 		return 0, nil
 	}
 	return c.FetchAllSizes()
+}
+
+// newLoggerForLevel creates a text logger writing to stderr at the given level.
+func newLoggerForLevel(level string) *slog.Logger {
+	var lvl slog.Level
+	switch strings.ToLower(level) {
+	case "debug":
+		lvl = slog.LevelDebug
+	case "warn", "warning":
+		lvl = slog.LevelWarn
+	case "error":
+		lvl = slog.LevelError
+	default:
+		lvl = slog.LevelInfo
+	}
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl}))
 }

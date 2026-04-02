@@ -10,7 +10,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,13 +137,11 @@ func cmdCopy(args []string) error {
 		return fmt.Errorf("encryption key is required: use -k <key>")
 	}
 
-	logger := setupLogger(*logLvl)
-
 	return runner.Run(&runner.Options{
-		ConfigPath:    expandPath(*cfgPath),
-		EncryptionKey: *key,
-		Perform:       *perform,
-		Logger:        logger,
+		ConfigPath:       expandPath(*cfgPath),
+		EncryptionKey:    *key,
+		Perform:          *perform,
+		ExplicitLogLevel: *logLvl,
 	})
 }
 
@@ -303,12 +300,10 @@ func cmdVerify(args []string) error {
 		return fmt.Errorf("encryption key is required: use -k <key>")
 	}
 
-	logger := setupLogger(*logLvl)
-
 	results, err := verifier.Verify(&verifier.Options{
-		ConfigPath:    expandPath(*cfgPath),
-		EncryptionKey: *key,
-		Logger:        logger,
+		ConfigPath:       expandPath(*cfgPath),
+		EncryptionKey:    *key,
+		ExplicitLogLevel: *logLvl,
 	})
 	if err != nil {
 		return err
@@ -400,28 +395,6 @@ func formatBytes(b uint64) string {
 	}
 }
 
-// setupLogger creates a logger based on log level string.
-func setupLogger(logLvl string) *slog.Logger {
-	level := slog.LevelInfo
-
-	switch strings.ToLower(logLvl) {
-	case "debug":
-		level = slog.LevelDebug
-	case "info":
-		level = slog.LevelInfo
-	case "warn", "warning":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	}
-
-	opts := &slog.HandlerOptions{
-		Level: level,
-	}
-
-	handler := slog.NewTextHandler(os.Stderr, opts)
-	return slog.New(handler)
-}
 
 // expandPath expands ~ to user home directory.
 func expandPath(path string) string {
