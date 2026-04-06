@@ -42,8 +42,8 @@ make install
 ## Workflow
 
 ```
-1. boxcopy init                        # Generate config at ~/.boxcopy/config.toml
-2. vim ~/.boxcopy/config.toml          # Edit with your server details
+1. boxcopy init                       # Generate config at ~/.boxcopy/config.toml
+2. vim ~/.boxcopy/config.toml         # Edit with your server details
 3. boxcopy encrypt-password -k <key>  # Encrypt each mailbox password
 4. boxcopy copy -k <key>              # Dry-run: review what would be copied
 5. boxcopy copy -k <key> --perform    # Actual copy (asks for confirmation)

@@ -153,9 +153,10 @@ target_password = "y"
 `
 	f, err := os.CreateTemp("", "boxcopy_verify_test*.toml")
 	verify.NoError(t, err)
-	t.Cleanup(func() { os.Remove(f.Name()) })
-	fmt.Fprint(f, toml)
-	f.Close()
+	t.Cleanup(func() { _ = os.Remove(f.Name()) })
+	_, err = fmt.Fprint(f, toml)
+	verify.NoError(t, err)
+	verify.NoError(t, f.Close())
 
 	_, err = Verify(&Options{
 		ConfigPath:    f.Name(),
@@ -195,9 +196,10 @@ target_password = %q
 
 	f, err := os.CreateTemp("", "boxcopy_verify_loglevel*.toml")
 	verify.NoError(t, err)
-	t.Cleanup(func() { os.Remove(f.Name()) })
-	fmt.Fprint(f, toml)
-	f.Close()
+	t.Cleanup(func() { _ = os.Remove(f.Name()) })
+	_, err = fmt.Fprint(f, toml)
+	verify.NoError(t, err)
+	verify.NoError(t, f.Close())
 
 	// No ExplicitLogLevel → falls back to config's "debug".
 	// Verify itself must return nil (config is valid); per-mailbox connect errors

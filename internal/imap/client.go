@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log/slog"
+	"net"
 	"sync"
 	"time"
 
@@ -58,7 +59,7 @@ func Dial(server config.ServerConfig, user, password string, opts *Options) (*Cl
 		slog.String("user", user),
 	)
 
-	addr := fmt.Sprintf("%s:%d", server.Host, server.Port)
+	addr := net.JoinHostPort(server.Host, fmt.Sprintf("%d", server.Port))
 	logger.Debug("connecting to IMAP server")
 
 	var client *imapclient.Client
@@ -76,7 +77,13 @@ func Dial(server config.ServerConfig, user, password string, opts *Options) (*Cl
 			TLSConfig: tlsConfig,
 		})
 	} else {
-		client, err = imapclient.DialInsecure(addr, nil)
+		// Use a dialer with timeout; imapclient.DialInsecure uses net.Dial with
+		// no timeout, which blocks until the OS TCP timeout on unreachable hosts.
+		var conn net.Conn
+		conn, err = (&net.Dialer{Timeout: 30 * time.Second}).Dial("tcp", addr)
+		if err == nil {
+			client = imapclient.New(conn, nil)
+		}
 	}
 
 	if err != nil {

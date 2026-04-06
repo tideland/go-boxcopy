@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	version = "0.1.0"
+	version = "0.2.0"
 
 	defaultConfigPath = "~/.boxcopy/config.toml"
 )
@@ -373,7 +373,6 @@ func formatBytes(b uint64) string {
 		return fmt.Sprintf("%d B", b)
 	}
 }
-
 
 // expandPath expands ~ to user home directory.
 func expandPath(path string) string {

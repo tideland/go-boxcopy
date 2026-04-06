@@ -67,10 +67,10 @@ func TestConfirmCopyDeclined(t *testing.T) {
 	}
 }
 
-// TestRunDryRunFromFile tests a full dry-run through Run() using a temp config file
-// with properly encrypted passwords — no IMAP connection is made.
-func TestRunDryRunFromFile(t *testing.T) {
-	key := "testkey"
+// writeTempConfig writes a minimal valid TOML config with encrypted passwords
+// to a temp file and returns the file path. The file is removed at test cleanup.
+func writeTempConfig(t *testing.T, key string) string {
+	t.Helper()
 	srcPwd, err := config.EncryptPassword("sourcepwd", key)
 	verify.NoError(t, err)
 	tgtPwd, err := config.EncryptPassword("targetpwd", key)
@@ -103,9 +103,15 @@ target_password = %q
 	if err := f.Close(); err != nil {
 		t.Fatalf("failed to close temp file: %v", err)
 	}
+	return f.Name()
+}
 
-	err = Run(&Options{
-		ConfigPath:    f.Name(),
+// TestRunDryRunFromFile tests a full dry-run through Run() using a temp config file
+// with properly encrypted passwords — no IMAP connection is made.
+func TestRunDryRunFromFile(t *testing.T) {
+	key := "testkey"
+	err := Run(&Options{
+		ConfigPath:    writeTempConfig(t, key),
 		EncryptionKey: key,
 		Perform:       false,
 	})
@@ -116,41 +122,8 @@ target_password = %q
 // confirmation prompt when the user does not type YES.
 func TestRunPerformDeclined(t *testing.T) {
 	key := "testkey"
-	srcPwd, err := config.EncryptPassword("sourcepwd", key)
-	verify.NoError(t, err)
-	tgtPwd, err := config.EncryptPassword("targetpwd", key)
-	verify.NoError(t, err)
-
-	toml := fmt.Sprintf(`
-[source]
-host = "imap.source.com"
-
-[target]
-host = "imap.target.com"
-
-[[mailbox]]
-name = "user1"
-source_user = "user1@source.com"
-source_password = %q
-target_user = "user1@target.com"
-target_password = %q
-`, srcPwd, tgtPwd)
-
-	f, err := os.CreateTemp("", "boxcopy*.toml")
-	verify.NoError(t, err)
-	t.Cleanup(func() {
-		if err := os.Remove(f.Name()); err != nil {
-			t.Errorf("failed to remove temp file: %v", err)
-		}
-	})
-	_, err = f.WriteString(toml)
-	verify.NoError(t, err)
-	if err := f.Close(); err != nil {
-		t.Fatalf("failed to close temp file: %v", err)
-	}
-
-	err = Run(&Options{
-		ConfigPath:    f.Name(),
+	err := Run(&Options{
+		ConfigPath:    writeTempConfig(t, key),
 		EncryptionKey: key,
 		Perform:       true,
 		Input:         strings.NewReader("NO\n"),

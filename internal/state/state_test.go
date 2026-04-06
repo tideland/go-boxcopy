@@ -293,6 +293,21 @@ func TestSaveLoad(t *testing.T) {
 	verify.True(t, s2.IsSynced("user1", "INBOX", 300))
 }
 
+// TestLoadVersionMismatch tests that loading a state file with a newer version
+// returns a clear error (fix 4.3).
+func TestLoadVersionMismatch(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "future_state.json")
+
+	data := []byte(`{"version":999,"updated_at":"2026-01-01T00:00:00Z","mailboxes":{}}`)
+	err := os.WriteFile(path, data, 0600)
+	verify.NoError(t, err)
+
+	_, err = Load(path)
+	verify.Error(t, err)
+	verify.ErrorContains(t, err, "999")
+}
+
 // TestLoadNonExistent tests loading from non-existent file.
 func TestLoadNonExistent(t *testing.T) {
 	s, err := Load("/tmp/nonexistent_state_file_12345.json")
