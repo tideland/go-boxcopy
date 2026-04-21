@@ -174,6 +174,7 @@ Counting messages and summing their sizes is sufficient to detect missing or tru
 ## Documentation
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Technical architecture and design
+- [ERRORS.md](docs/ERRORS.md) - List of warnings and errors with guidance for users
 - [CHANGELOG.md](CHANGELOG.md) - Version history
 
 ## License
